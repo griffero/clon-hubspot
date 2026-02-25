@@ -1,0 +1,25 @@
+{
+  "name": "app",
+  "private": true,
+  "devDependencies": {
+    "esbuild": "^0.27.3"
+  },
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "build:css": "bunx @tailwindcss/cli -i ./app/assets/stylesheets/application.tailwind.css -o ./app/assets/builds/application.css --minify"
+  },
+  "dependencies": {
+    "@heroicons/vue": "^2.2.0",
+    "@hotwired/stimulus": "^3.2.2",
+    "@hotwired/turbo-rails": "^8.0.23",
+    "@tailwindcss/cli": "^4.2.1",
+    "@vue/compiler-sfc": "^3.5.29",
+    "esbuild-plugin-vue3": "^0.5.1",
+    "pinia": "^3.0.4",
+    "sortablejs": "^1.15.7",
+    "tailwindcss": "^4.2.1",
+    "vue": "3",
+    "vue-router": "4",
+    "vuedraggable": "^4.1.0"
+  }
+}
