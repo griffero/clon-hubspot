@@ -1,6 +1,6 @@
 databases:
   - name: clon-hubspot-db
-    plan: starter
+    plan: basic
     databaseName: clon_hubspot_production
 
 services:
