@@ -18,11 +18,25 @@
     <link rel="apple-touch-icon" href="/icon.png">
 
     <%# Includes all stylesheet files in app/assets/stylesheets %>
-    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
-    <%= javascript_include_tag "application", "data-turbo-track": "reload", type: "module" %>
+    <%= stylesheet_link_tag :app, "data-turbo-track": "reload" if asset_present?("app.css") %>
+    <%= javascript_include_tag "application", "data-turbo-track": "reload", type: "module" if asset_present?("application.js") %>
   </head>
 
   <body>
+    <% if notice.present? %>
+      <p style="margin:0;padding:.75rem 1rem;background:#e8f5e9;color:#1b5e20;"><%= notice %></p>
+    <% end %>
+    <% if alert.present? %>
+      <p style="margin:0;padding:.75rem 1rem;background:#ffebee;color:#b71c1c;"><%= alert %></p>
+    <% end %>
+
+    <% if current_user.present? %>
+      <div style="display:flex;justify-content:flex-end;gap:1rem;padding:.5rem 1rem;font-family:system-ui,sans-serif;">
+        <span><%= current_user.email %></span>
+        <%= button_to "Salir", logout_path, method: :delete, form: { style: "display:inline" } %>
+      </div>
+    <% end %>
+
     <%= yield %>
   </body>
 </html>

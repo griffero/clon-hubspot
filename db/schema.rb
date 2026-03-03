@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_03_03_000202) do
+ActiveRecord::Schema[8.0].define(version: 2026_03_03_130510) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -126,6 +126,18 @@ ActiveRecord::Schema[8.0].define(version: 2026_03_03_000202) do
     t.index ["to_object_type", "to_hubspot_id"], name: "index_hubspot_associations_on_to_object_type_and_to_hubspot_id"
   end
 
+  create_table "magic_link_tokens", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "token_digest", null: false
+    t.datetime "expires_at", null: false
+    t.datetime "used_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["expires_at"], name: "index_magic_link_tokens_on_expires_at"
+    t.index ["token_digest"], name: "index_magic_link_tokens_on_token_digest", unique: true
+    t.index ["user_id"], name: "index_magic_link_tokens_on_user_id"
+  end
+
   create_table "pipelines", force: :cascade do |t|
     t.string "hubspot_id"
     t.string "label"
@@ -149,9 +161,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_03_03_000202) do
     t.index ["pipeline_id"], name: "index_stages_on_pipeline_id"
   end
 
+  create_table "users", force: :cascade do |t|
+    t.string "email", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["email"], name: "index_users_on_email", unique: true
+  end
+
   add_foreign_key "deals", "pipelines"
   add_foreign_key "deals", "stages"
   add_foreign_key "export_checkpoints", "export_runs"
   add_foreign_key "export_tables", "export_runs"
+  add_foreign_key "magic_link_tokens", "users"
   add_foreign_key "stages", "pipelines"
 end

@@ -1,6 +1,11 @@
 Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
+  get "login", to: "sessions#new"
+  post "login", to: "sessions#create"
+  delete "logout", to: "sessions#destroy"
+  get "magic/:token", to: "magic_links#show", as: :magic_link
+
   namespace :api do
     namespace :v1 do
       resources :deals, only: [:index, :show]

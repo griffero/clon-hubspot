@@ -1,0 +1,12 @@
+<main style="max-width: 420px; margin: 4rem auto; font-family: system-ui, sans-serif;">
+  <h1>Entrar a Clon Hubspot</h1>
+  <p>Usa tu correo <strong>@fintoc.com</strong> y te mandamos un magic link.</p>
+
+  <%= form_with url: login_path, method: :post, local: true do |f| %>
+    <div style="margin: 1rem 0;">
+      <%= f.label :email, "Correo" %><br>
+      <%= f.email_field :email, required: true, autofocus: true, placeholder: "nombre@fintoc.com", style: "width:100%;padding:.6rem;" %>
+    </div>
+    <%= f.submit "Enviar magic link", style: "padding:.6rem 1rem;" %>
+  <% end %>
+</main>
