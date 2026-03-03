@@ -20,12 +20,25 @@
 2. Resume:
    - `bin/rails "export:resume[run_id]"`
 
-## 4) Verify Output
+## 4) Verify + Reconcile Output
 
 1. `bin/rails "export:verify[run_id]"`
-2. Inspect `exports/run_id=<RUN_ID>/manifests/verification_report.json`.
+2. `bin/rails "export:reconcile[run_id]"`
+3. Inspect generated artifacts:
+   - `exports/run_id=<RUN_ID>/manifests/verification_report.json`
+   - `exports/run_id=<RUN_ID>/manifests/reconciliation_report.json`
+   - `exports/run_id=<RUN_ID>/manifests/coverage_matrix.md`
 
-## 5) Investigate Common Issues
+## 5) Coverage Audit
+
+- Generate matrix in terminal:
+  - `bin/rails "export:coverage[run_id]"`
+- Expected statuses:
+  - `FULL` = table exported with rows
+  - `PARTIAL` = extractor ran but no rows
+  - `BLOCKED` = extractor missing or unavailable in this run
+
+## 6) Investigate Common Issues
 
 - `Missing COMPOSIO_API_KEY`:
   - set ENV var or Rails credentials key `composio.api_key`
@@ -34,10 +47,12 @@
 - repeated `retry_exhausted`:
   - inspect `export_runs.error_message`
   - inspect API rate limits; reduce concurrent external usage
+- association extractor warnings:
+  - check `export_checkpoints.metadata.by_target`
+  - verify Composio association action availability in your tenant
 
-## 6) Operational Notes
+## 7) Operational Notes
 
-- `export:verify` is safe and idempotent.
+- `export:verify` and `export:reconcile` are safe and idempotent.
 - `export:resume` is idempotent for completed checkpoints.
 - run manifests are regenerated at the end of successful run execution.
-

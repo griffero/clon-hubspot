@@ -1,6 +1,6 @@
 # HubSpot Export Foundation
 
-This project now includes a resumable, DB-backed HubSpot export pipeline (Phase 0 + Phase 1 foundation) using Composio actions.
+This project includes a resumable, DB-backed HubSpot export pipeline (Phase 0 + Phase 1+ extensions) using Composio actions.
 
 ## Credentials and Configuration
 
@@ -22,15 +22,19 @@ Rails credentials fallback keys:
 - Incremental: `bin/rails "export:incremental[portal_id]"`
 - Resume: `bin/rails "export:resume[run_id]"`
 - Verify: `bin/rails "export:verify[run_id]"`
+- Reconcile: `bin/rails "export:reconcile[run_id]"`
+- Coverage matrix: `bin/rails "export:coverage[run_id]"`
 
 If `portal_id` is omitted, `HUBSPOT_PORTAL_ID` (or credentials fallback) is used.
 
 ## What Gets Exported
 
-Current core extractors (MVP):
+Current object registry coverage:
 
-- CRM: contacts, companies, deals
-- Metadata discovery: properties, pipelines, owners, schemas (best-effort via candidate Composio actions)
+- CRM objects: contacts, companies, deals, tickets, leads, products, line items, quotes, calls, emails, meetings, notes, tasks
+- Dynamic custom objects discovered from schemas metadata
+- Associations fanout export per source object (`*_associations` JSONL tables)
+- Metadata snapshots: properties, pipelines, owners, schemas
 
 ## Output Layout
 
@@ -43,6 +47,9 @@ Key files:
 - `manifests/run_manifest.json`
 - `manifests/tables_manifest.json`
 - `manifests/checksum_manifest.json`
+- `manifests/reconciliation_report.json`
+- `manifests/coverage_matrix.json`
+- `manifests/coverage_matrix.md`
 - `manifests/run_report.json`
 - `manifests/run_report.md`
 - `manifests/verification_report.json` (created by verify command)
@@ -69,14 +76,16 @@ A resumed run (`export:resume`) continues from the saved per-extractor cursor in
 
 ## Incremental Semantics
 
-Incremental mode uses `hs_lastmodifieddate` with a 24-hour overlap window from the previous successful incremental run.
+Incremental mode uses `hs_lastmodifieddate` with a 24-hour overlap window and prefers previous successful checkpoint high-watermarks per object. Tombstone hooks are emitted from records marked `archived` / `isDeleted`.
 
-## Verification
+## Verification + Reconciliation
 
 `export:verify[run_id]` checks:
 
 - each table file exists
 - extracted row count equals persisted manifest count
 - checksum matches (when available)
+
+`export:reconcile[run_id]` emits stronger row/checksum reconciliation summaries per table.
 
 Any mismatch marks table status as `mismatch` and raises.

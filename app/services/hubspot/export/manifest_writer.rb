@@ -45,22 +45,33 @@ module Hubspot
           memo[table.file_path] = table.checksum
         end
 
+        reconciliation = ReconciliationReport.new(run: run, store: store).as_json
+        coverage = CoverageMatrixGenerator.new(run: run).as_json
+
         store.write_json("manifests/run_manifest.json", run_manifest)
         store.write_json("manifests/tables_manifest.json", tables_manifest)
         store.write_json("manifests/checksum_manifest.json", checksum_manifest)
-        store.write_json("manifests/run_report.json", build_run_report(tables_manifest))
-        store.write_text("manifests/run_report.md", build_run_report_markdown(tables_manifest))
+        store.write_json("manifests/reconciliation_report.json", reconciliation)
+        store.write_json("manifests/coverage_matrix.json", coverage)
+        store.write_text("manifests/coverage_matrix.md", CoverageMatrixGenerator.new(run: run).as_markdown)
+        store.write_json("manifests/run_report.json", build_run_report(tables_manifest, reconciliation, coverage))
+        store.write_text("manifests/run_report.md", build_run_report_markdown(tables_manifest, reconciliation))
       end
 
       private
 
       attr_reader :run, :store
 
-      def build_run_report(tables_manifest)
+      def build_run_report(tables_manifest, reconciliation, coverage)
         {
           run_id: run.run_id,
           generated_at: Time.current.iso8601,
           verification_ready: tables_manifest.all? { |row| row[:status] == "written" || row[:status] == "verified" },
+          mismatch_count: reconciliation[:mismatch_count],
+          partial_count: reconciliation[:partial_count],
+          coverage_full_count: coverage[:rows].count { |r| r[:status] == "FULL" },
+          coverage_partial_count: coverage[:rows].count { |r| r[:status] == "PARTIAL" },
+          coverage_blocked_count: coverage[:rows].count { |r| r[:status] == "BLOCKED" },
           table_summaries: tables_manifest.map do |row|
             {
               extractor_key: row[:extractor_key],
@@ -72,7 +83,7 @@ module Hubspot
         }
       end
 
-      def build_run_report_markdown(tables_manifest)
+      def build_run_report_markdown(tables_manifest, reconciliation)
         lines = []
         lines << "# HubSpot Export Run Report"
         lines << ""
@@ -82,6 +93,8 @@ module Hubspot
         lines << "- Status: #{run.status}"
         lines << "- Started At: #{run.started_at}"
         lines << "- Finished At: #{run.finished_at}"
+        lines << "- Reconciliation mismatches: #{reconciliation[:mismatch_count]}"
+        lines << "- Reconciliation partial tables: #{reconciliation[:partial_count]}"
         lines << ""
         lines << "## Tables"
         lines << ""

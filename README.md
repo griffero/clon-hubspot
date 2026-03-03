@@ -15,3 +15,5 @@ Core commands:
 - `bin/rails "export:incremental[portal_id]"`
 - `bin/rails "export:resume[run_id]"`
 - `bin/rails "export:verify[run_id]"`
+- `bin/rails "export:reconcile[run_id]"`
+- `bin/rails "export:coverage[run_id]"`
