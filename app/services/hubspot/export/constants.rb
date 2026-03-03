@@ -3,30 +3,57 @@ module Hubspot
     module Constants
       module_function
 
-      def object_extractors
-        [
+      STANDARD_OBJECTS = [
+        { object_type: "contacts", extractor_key: "crm_contacts", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_CONTACTS" ], search_action_candidates: [ "HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA" ] },
+        { object_type: "companies", extractor_key: "crm_companies", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_COMPANIES" ], search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_COMPANIES" ] },
+        { object_type: "deals", extractor_key: "crm_deals", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_DEALS" ], search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_DEALS" ] },
+        { object_type: "tickets", extractor_key: "crm_tickets", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_TICKETS", "HUBSPOT_LIST_TICKETS" ], search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_TICKETS", "HUBSPOT_SEARCH_TICKETS" ] },
+        { object_type: "leads", extractor_key: "crm_leads", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_LEADS", "HUBSPOT_LIST_LEADS" ], search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_LEADS", "HUBSPOT_SEARCH_LEADS" ] },
+        { object_type: "products", extractor_key: "crm_products", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_PRODUCTS", "HUBSPOT_LIST_PRODUCTS" ], search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_PRODUCTS", "HUBSPOT_SEARCH_PRODUCTS" ] },
+        { object_type: "line_items", extractor_key: "crm_line_items", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_LINE_ITEMS", "HUBSPOT_LIST_LINE_ITEMS" ], search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_LINE_ITEMS", "HUBSPOT_SEARCH_LINE_ITEMS" ] },
+        { object_type: "quotes", extractor_key: "crm_quotes", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_QUOTES", "HUBSPOT_LIST_QUOTES" ], search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_QUOTES", "HUBSPOT_SEARCH_QUOTES" ] },
+        { object_type: "calls", extractor_key: "crm_calls", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_CALLS", "HUBSPOT_LIST_CALLS" ], search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_CALLS", "HUBSPOT_SEARCH_CALLS" ] },
+        { object_type: "emails", extractor_key: "crm_emails", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_EMAILS", "HUBSPOT_LIST_EMAILS" ], search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_EMAILS", "HUBSPOT_SEARCH_EMAILS" ] },
+        { object_type: "meetings", extractor_key: "crm_meetings", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_MEETINGS", "HUBSPOT_LIST_MEETINGS" ], search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_MEETINGS", "HUBSPOT_SEARCH_MEETINGS" ] },
+        { object_type: "notes", extractor_key: "crm_notes", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_NOTES", "HUBSPOT_LIST_NOTES" ], search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_NOTES", "HUBSPOT_SEARCH_NOTES" ] },
+        { object_type: "tasks", extractor_key: "crm_tasks", list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_TASKS", "HUBSPOT_LIST_TASKS" ], search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_TASKS", "HUBSPOT_SEARCH_TASKS" ] }
+      ].freeze
+
+      ASSOCIATION_SOURCE_OBJECTS = %w[
+        contacts companies deals tickets leads products line_items quotes calls emails meetings notes tasks
+      ].freeze
+
+      ASSOCIATION_TARGET_OBJECTS = %w[
+        contacts companies deals tickets line_items quotes calls emails meetings notes tasks
+      ].freeze
+
+      def object_extractors(dynamic_objects: [])
+        standard = STANDARD_OBJECTS.map do |cfg|
           {
-            extractor_key: "crm_contacts",
-            object_type: "contacts",
-            list_action: "HUBSPOT_HUBSPOT_LIST_CONTACTS",
-            search_action: "HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA",
-            properties: Hubspot::Properties::CONTACTS
-          },
-          {
-            extractor_key: "crm_companies",
-            object_type: "companies",
-            list_action: "HUBSPOT_HUBSPOT_LIST_COMPANIES",
-            search_action: "HUBSPOT_HUBSPOT_SEARCH_COMPANIES",
-            properties: Hubspot::Properties::COMPANIES
-          },
-          {
-            extractor_key: "crm_deals",
-            object_type: "deals",
-            list_action: "HUBSPOT_HUBSPOT_LIST_DEALS",
-            search_action: "HUBSPOT_HUBSPOT_SEARCH_DEALS",
-            properties: Hubspot::Properties::DEALS
+            extractor_key: cfg.fetch(:extractor_key),
+            object_type: cfg.fetch(:object_type),
+            list_action_candidates: cfg.fetch(:list_action_candidates),
+            search_action_candidates: cfg.fetch(:search_action_candidates),
+            properties: Hubspot::Properties.for_object(cfg.fetch(:object_type))
           }
-        ]
+        end
+
+        dynamic = dynamic_objects.map do |schema|
+          name = schema["name"].presence || schema["objectTypeId"].presence || "custom_object"
+          object_type = "custom_#{name.parameterize(separator: "_")}"
+          {
+            extractor_key: "crm_#{object_type}",
+            object_type: object_type,
+            list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_OBJECTS", "HUBSPOT_LIST_OBJECTS" ],
+            search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_OBJECTS", "HUBSPOT_SEARCH_OBJECTS" ],
+            properties: [ "hs_lastmodifieddate" ],
+            custom_object_schema: schema,
+            custom_object_name: name,
+            custom_object_id: schema["objectTypeId"]
+          }
+        end
+
+        standard + dynamic
       end
 
       def metadata_endpoints
@@ -65,7 +92,7 @@ module Hubspot
             extractor_key: "metadata_pipelines_deals",
             object_type: "pipelines_deals",
             output_path: "metadata/pipelines/deals.json",
-            action_candidates: ["HUBSPOT_RETRIEVE_ALL_PIPELINES"],
+            action_candidates: [ "HUBSPOT_RETRIEVE_ALL_PIPELINES" ],
             input: { objectType: "deals" }
           },
           {

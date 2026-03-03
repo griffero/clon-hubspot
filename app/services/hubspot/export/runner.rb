@@ -29,21 +29,38 @@ module Hubspot
 
         MetadataExtractor.new(run: run, portal_id: run.portal_id, store: store, client: client).call
 
-        incremental_since = incremental_since_for(run)
-        Constants.object_extractors.each do |extractor_config|
+        dynamic_objects = discover_custom_objects(store)
+        extractors = Constants.object_extractors(dynamic_objects: dynamic_objects)
+        incremental_since_map = incremental_since_for(run, extractors)
+
+        extractors.each do |extractor_config|
           ObjectExtractor.new(
             run: run,
             portal_id: run.portal_id,
             store: store,
             client: client,
             config: extractor_config,
-            incremental_since: incremental_since
+            incremental_since: incremental_since_map[extractor_config.fetch(:extractor_key)]
+          ).call
+        end
+
+        Constants::ASSOCIATION_SOURCE_OBJECTS.each do |source_object|
+          AssociationsExtractor.new(
+            run: run,
+            portal_id: run.portal_id,
+            store: store,
+            client: client,
+            source_object: source_object,
+            target_objects: Constants::ASSOCIATION_TARGET_OBJECTS
           ).call
         end
 
         run.update!(
           total_records: run.export_tables.sum(:extracted_count),
-          stats: run.stats.merge("incremental_since" => incremental_since&.iso8601)
+          stats: run.stats.merge(
+            "incremental_since" => incremental_since_map.transform_values { |v| v&.iso8601 },
+            "custom_object_count" => dynamic_objects.size
+          )
         )
 
         ManifestWriter.new(run: run, store: store).write!
@@ -71,19 +88,39 @@ module Hubspot
         )
       end
 
-      def self.incremental_since_for(run)
-        return nil unless run.incremental?
+      def self.incremental_since_for(run, extractors)
+        return {} unless run.incremental?
 
         previous = ExportRun.where(portal_id: run.portal_id, mode: :incremental, status: :succeeded)
                             .where.not(id: run.id)
                             .order(finished_at: :desc)
                             .first
-        return nil if previous&.finished_at.blank?
 
-        previous.finished_at - OVERLAP_WINDOW
+        extractors.each_with_object({}) do |config, memo|
+          key = config.fetch(:extractor_key)
+          checkpoint = previous&.export_checkpoints&.find_by(extractor_key: key)
+          watermark = checkpoint&.high_watermark
+          fallback = previous&.finished_at
+          memo[key] = [ watermark, fallback ].compact.max&.-(OVERLAP_WINDOW)
+        end
       end
 
-      private_class_method :create_run!, :incremental_since_for
+      def self.discover_custom_objects(store)
+        schemas_path = store.absolute_path("metadata/schemas/schemas.json")
+        return [] unless File.exist?(schemas_path)
+
+        payload = JSON.parse(File.read(schemas_path))
+        schemas = payload.dig("data", "results") || payload.dig("data", "objects") || payload.dig("data") || []
+
+        Array(schemas).select do |schema|
+          name = schema["name"].to_s
+          schema["objectTypeId"].present? && !Constants::ASSOCIATION_SOURCE_OBJECTS.include?(name)
+        end
+      rescue JSON::ParserError
+        []
+      end
+
+      private_class_method :create_run!, :incremental_since_for, :discover_custom_objects
     end
   end
 end

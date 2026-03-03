@@ -24,10 +24,12 @@ module Hubspot
         extracted_count = checkpoint.records_exported
         file_path = "raw_jsonl/object=#{config.fetch(:object_type)}/part-00001.jsonl"
         highest_seen = checkpoint.high_watermark
+        tombstone_count = checkpoint.metadata.fetch("tombstone_count", 0)
+        resolved_action = checkpoint.metadata["resolved_action"]
 
         loop do
           payload = build_payload(cursor)
-          response = client.execute_action(resolve_action, payload)
+          response, resolved_action = fetch_page(payload, resolved_action)
           results = response["results"] || []
           extracted_at = Time.current.iso8601
 
@@ -35,9 +37,11 @@ module Hubspot
             props = record["properties"] || {}
             last_modified = parse_time(props["hs_lastmodifieddate"])
             highest_seen = [highest_seen, last_modified].compact.max
+            deleted = record["archived"] == true || record["isDeleted"] == true
+            tombstone_count += 1 if deleted
 
             {
-              **base_columns(record, extracted_at, cursor),
+              **base_columns(record, extracted_at, cursor, resolved_action, deleted),
               "properties" => props,
               "associations" => record["associations"] || {}
             }
@@ -52,7 +56,11 @@ module Hubspot
             cursor: next_cursor,
             records_exported: extracted_count,
             high_watermark: highest_seen,
-            metadata: checkpoint.metadata.merge("last_page_count" => results.length)
+            metadata: checkpoint.metadata.merge(
+              "last_page_count" => results.length,
+              "resolved_action" => resolved_action,
+              "tombstone_count" => tombstone_count
+            )
           )
           run.heartbeat!
 
@@ -61,7 +69,7 @@ module Hubspot
         end
 
         checksum = store.checksum(file_path)
-        upsert_table_record!(file_path: file_path, extracted_count: extracted_count, checksum: checksum)
+        upsert_table_record!(file_path: file_path, extracted_count: extracted_count, checksum: checksum, endpoint: resolved_action, tombstone_count: tombstone_count)
         checkpoint.mark_succeeded!(high_watermark: highest_seen)
         checkpoint
       rescue Hubspot::RetryExhaustedError => e
@@ -76,8 +84,12 @@ module Hubspot
 
       attr_reader :run, :portal_id, :store, :client, :config, :incremental_since
 
-      def resolve_action
-        incremental_since.present? ? config.fetch(:search_action) : config.fetch(:list_action)
+      def action_candidates
+        if incremental_since.present?
+          config.fetch(:search_action_candidates)
+        else
+          config.fetch(:list_action_candidates)
+        end
       end
 
       def build_payload(cursor)
@@ -86,6 +98,10 @@ module Hubspot
           properties: config.fetch(:properties)
         }
         payload[:after] = cursor if cursor.present?
+
+        if config[:custom_object_name].present? || config[:custom_object_id].present?
+          payload[:objectType] = config[:custom_object_name] || config[:custom_object_id]
+        end
 
         return payload if incremental_since.blank?
 
@@ -103,7 +119,20 @@ module Hubspot
         payload
       end
 
-      def base_columns(record, extracted_at, cursor)
+      def fetch_page(payload, preferred_action = nil)
+        candidates = [ preferred_action, *action_candidates ].compact.uniq
+        last_error = nil
+
+        candidates.each do |action|
+          return [ client.execute_action(action, payload), action ]
+        rescue StandardError => e
+          last_error = e
+        end
+
+        raise(last_error || "No object extraction action candidates succeeded")
+      end
+
+      def base_columns(record, extracted_at, cursor, endpoint, deleted)
         raw_hash = Digest::SHA256.hexdigest(JSON.generate(record))
 
         {
@@ -112,16 +141,16 @@ module Hubspot
           "_record_id" => record["id"],
           "_extracted_at" => extracted_at,
           "_cursor" => cursor,
-          "_source_endpoint" => resolve_action,
+          "_source_endpoint" => endpoint,
           "_run_id" => run.run_id,
           "_raw_hash" => raw_hash,
-          "_deleted" => false,
+          "_deleted" => deleted,
           "_valid_from" => nil,
           "_valid_to" => nil
         }
       end
 
-      def upsert_table_record!(file_path:, extracted_count:, checksum:)
+      def upsert_table_record!(file_path:, extracted_count:, checksum:, endpoint:, tombstone_count:)
         table = run.export_tables.find_or_initialize_by(extractor_key: config.fetch(:extractor_key))
         table.update!(
           object_type: config.fetch(:object_type),
@@ -131,8 +160,13 @@ module Hubspot
           checksum: checksum,
           status: :written,
           metadata: {
-            endpoint: resolve_action,
-            base_columns: Constants.base_columns
+            endpoint: endpoint,
+            base_columns: Constants.base_columns,
+            tombstone_count: tombstone_count,
+            incremental_overlap_window_hours: Hubspot::Export::Runner::OVERLAP_WINDOW.in_hours,
+            deletion_signal: "record.archived || record.isDeleted",
+            deletion_api_supported: false,
+            todo: "Add HubSpot recycle-bin endpoint adapter when available in Composio"
           }
         )
       end
