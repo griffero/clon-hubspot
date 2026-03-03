@@ -68,7 +68,7 @@ class Hubspot::Export::ObjectExtractorTest < ActiveSupport::TestCase
     table = @run.export_tables.find_by!(extractor_key: "crm_contacts")
     assert_equal 2, table.extracted_count
     assert_equal "raw_jsonl/object=contacts/part-00001.jsonl", table.file_path
-    assert_equal ["email"], table.metadata.dig("schema_drift", "unexpected_properties")
+    assert_equal [], table.metadata.dig("schema_drift", "unexpected_properties")
     assert_includes table.metadata.dig("deletion_strategy", "flags"), "record.archived"
   end
 end

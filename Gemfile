@@ -67,6 +67,9 @@ group :development do
 end
 
 group :test do
+  # Rails 8 test integration currently expects minitest 5.x APIs.
+  gem "minitest", "< 6"
+
   # Use system testing [https://guides.rubyonrails.org/testing.html#system-testing]
   gem "capybara"
   gem "selenium-webdriver"

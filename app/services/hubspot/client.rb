@@ -1,3 +1,5 @@
+require_relative "errors"
+
 module Hubspot
   class Client
     BASE_URL = "https://backend.composio.dev"

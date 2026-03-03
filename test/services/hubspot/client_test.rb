@@ -30,11 +30,10 @@ class Hubspot::ClientTest < ActiveSupport::TestCase
     client = Hubspot::Client.new(api_key: "test", connected_account_id: "acc", connection: connection)
 
     sleeps = []
-    result = client.stub(:sleep, ->(seconds) { sleeps << seconds }) do
-      client.stub(:rand, 0.0) do
-        client.execute_action("ANY_ACTION", {}, max_retries: 3)
-      end
-    end
+    client.define_singleton_method(:sleep) { |seconds| sleeps << seconds }
+    client.define_singleton_method(:rand) { 0.0 }
+
+    result = client.execute_action("ANY_ACTION", {}, max_retries: 3)
 
     assert_equal 1, result.fetch("results").size
     assert_equal 2, connection.calls.size
@@ -46,12 +45,12 @@ class Hubspot::ClientTest < ActiveSupport::TestCase
     connection = SequenceConnection.new(responses)
     client = Hubspot::Client.new(api_key: "test", connected_account_id: "acc", connection: connection)
 
-    error = assert_raises(Hubspot::RetryExhaustedError) do
-      client.stub(:sleep, ->(_seconds) {}) do
-        client.stub(:rand, 0.0) do
-          client.execute_action("ANY_ACTION", {}, max_retries: 3)
-        end
-      end
+    retry_exhausted = Hubspot.const_get(:RetryExhaustedError)
+    client.define_singleton_method(:sleep) { |_seconds| nil }
+    client.define_singleton_method(:rand) { 0.0 }
+
+    error = assert_raises(retry_exhausted) do
+      client.execute_action("ANY_ACTION", {}, max_retries: 3)
     end
 
     assert_match(/Retry exhausted/, error.message)
