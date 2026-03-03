@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_02_25_203709) do
+ActiveRecord::Schema[8.0].define(version: 2026_03_03_000202) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -60,6 +60,61 @@ ActiveRecord::Schema[8.0].define(version: 2026_02_25_203709) do
     t.index ["stage_id"], name: "index_deals_on_stage_id"
   end
 
+  create_table "export_checkpoints", force: :cascade do |t|
+    t.bigint "export_run_id", null: false
+    t.string "portal_id", null: false
+    t.string "extractor_key", null: false
+    t.integer "status", default: 0, null: false
+    t.string "cursor"
+    t.datetime "high_watermark"
+    t.integer "records_exported", default: 0, null: false
+    t.integer "retries", default: 0, null: false
+    t.datetime "last_synced_at"
+    t.text "last_error"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["export_run_id", "portal_id", "extractor_key"], name: "idx_export_checkpoints_run_portal_key", unique: true
+    t.index ["export_run_id"], name: "index_export_checkpoints_on_export_run_id"
+    t.index ["status"], name: "index_export_checkpoints_on_status"
+  end
+
+  create_table "export_runs", force: :cascade do |t|
+    t.string "run_id", null: false
+    t.string "portal_id", null: false
+    t.string "mode", default: "full", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "started_at"
+    t.datetime "finished_at"
+    t.datetime "last_heartbeat_at"
+    t.integer "retry_count", default: 0, null: false
+    t.integer "total_records", default: 0, null: false
+    t.jsonb "stats", default: {}, null: false
+    t.text "error_message"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["portal_id", "created_at"], name: "index_export_runs_on_portal_id_and_created_at"
+    t.index ["run_id"], name: "index_export_runs_on_run_id", unique: true
+    t.index ["status"], name: "index_export_runs_on_status"
+  end
+
+  create_table "export_tables", force: :cascade do |t|
+    t.bigint "export_run_id", null: false
+    t.string "extractor_key", null: false
+    t.string "object_type", null: false
+    t.string "file_path", null: false
+    t.integer "expected_count"
+    t.integer "extracted_count", default: 0, null: false
+    t.integer "status", default: 0, null: false
+    t.string "checksum"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["export_run_id", "extractor_key"], name: "index_export_tables_on_export_run_id_and_extractor_key", unique: true
+    t.index ["export_run_id"], name: "index_export_tables_on_export_run_id"
+    t.index ["status"], name: "index_export_tables_on_status"
+  end
+
   create_table "hubspot_associations", force: :cascade do |t|
     t.string "from_object_type"
     t.string "from_hubspot_id"
@@ -96,5 +151,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_02_25_203709) do
 
   add_foreign_key "deals", "pipelines"
   add_foreign_key "deals", "stages"
+  add_foreign_key "export_checkpoints", "export_runs"
+  add_foreign_key "export_tables", "export_runs"
   add_foreign_key "stages", "pipelines"
 end
