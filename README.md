@@ -1,24 +1,17 @@
-# README
+# clon-hubspot
 
-This README would normally document whatever steps are necessary to get the
-application up and running.
+Rails app with HubSpot sync APIs and a production-style export foundation.
 
-Things you may want to cover:
+## HubSpot Export Foundation
 
-* Ruby version
+See:
 
-* System dependencies
+- `docs/hubspot_export_foundation.md`
+- `docs/hubspot_export_runbook.md`
 
-* Configuration
+Core commands:
 
-* Database creation
-
-* Database initialization
-
-* How to run the test suite
-
-* Services (job queues, cache servers, search engines, etc.)
-
-* Deployment instructions
-
-* ...
+- `bin/rails "export:full_dump[portal_id]"`
+- `bin/rails "export:incremental[portal_id]"`
+- `bin/rails "export:resume[run_id]"`
+- `bin/rails "export:verify[run_id]"`
