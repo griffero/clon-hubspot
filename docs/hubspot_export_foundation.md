@@ -34,6 +34,7 @@ Current object registry coverage:
 - CRM objects: contacts, companies, deals, tickets, leads, products, line items, quotes, calls, emails, meetings, notes, tasks
 - Dynamic custom objects discovered from schemas metadata
 - Associations fanout export per source object (`*_associations` JSONL tables)
+- Associations labels/type metadata snapshots: `metadata/associations/<source>.json`
 - Metadata snapshots: properties, pipelines, owners, schemas
 
 ## Output Layout
@@ -77,6 +78,8 @@ A resumed run (`export:resume`) continues from the saved per-extractor cursor in
 ## Incremental Semantics
 
 Incremental mode uses `hs_lastmodifieddate` with a 24-hour overlap window and prefers previous successful checkpoint high-watermarks per object. Tombstone hooks are emitted from records marked `archived` / `isDeleted`.
+
+Each table also records schema drift metadata (`unexpected_properties`, `missing_requested_properties`) to help track object evolution, including custom objects discovered dynamically from schema metadata.
 
 ## Verification + Reconciliation
 

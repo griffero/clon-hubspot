@@ -23,7 +23,7 @@ module Hubspot
         source_ids = load_source_ids
 
         if source_ids.empty?
-          upsert_table!(count: 0, endpoint: nil, by_target: {}, warning: "No source records available")
+          upsert_table!(count: 0, endpoint: nil, by_target: {}, labels_snapshot: {}, warning: "No source records available")
           checkpoint.update!(records_exported: 0, metadata: checkpoint.metadata.merge("warning" => "no source ids"))
           checkpoint.mark_succeeded!
           return checkpoint
@@ -32,13 +32,14 @@ module Hubspot
         start_offset = checkpoint.metadata.fetch("offset", 0).to_i
         total_count = checkpoint.records_exported
         by_target = checkpoint.metadata.fetch("by_target", {})
+        labels_snapshot = checkpoint.metadata.fetch("labels_snapshot", {})
         resolved_action = checkpoint.metadata["resolved_action"]
         file_path = "raw_jsonl/object=#{source_object}_associations/part-00001.jsonl"
 
         source_ids.each_slice(BATCH_SIZE).with_index do |slice, batch_idx|
           next if batch_idx < start_offset
 
-          rows, resolved_action, by_target = fetch_association_rows(slice, resolved_action, by_target)
+          rows, resolved_action, by_target, labels_snapshot = fetch_association_rows(slice, resolved_action, by_target, labels_snapshot)
           store.append_jsonl(file_path, rows)
           total_count += rows.size
 
@@ -49,13 +50,15 @@ module Hubspot
               "offset" => batch_idx + 1,
               "source_id_count" => source_ids.size,
               "by_target" => by_target,
+              "labels_snapshot" => labels_snapshot,
               "resolved_action" => resolved_action
             )
           )
           run.heartbeat!
         end
 
-        upsert_table!(count: total_count, endpoint: resolved_action, by_target: by_target)
+        write_labels_metadata!(labels_snapshot, resolved_action)
+        upsert_table!(count: total_count, endpoint: resolved_action, by_target: by_target, labels_snapshot: labels_snapshot)
         checkpoint.mark_succeeded!
         checkpoint
       rescue Hubspot::RetryExhaustedError => e
@@ -89,7 +92,7 @@ module Hubspot
         ids.uniq
       end
 
-      def fetch_association_rows(source_ids, preferred_action, by_target)
+      def fetch_association_rows(source_ids, preferred_action, by_target, labels_snapshot)
         rows = []
         resolved_action = preferred_action
 
@@ -104,6 +107,7 @@ module Hubspot
           by_target[to_object] = by_target.fetch(to_object, 0) + links.size
 
           links.each do |link|
+            update_labels_snapshot!(labels_snapshot, to_object, link)
             rows << normalize_link(link, to_object, resolved_action)
           end
         rescue StandardError
@@ -111,7 +115,7 @@ module Hubspot
           next
         end
 
-        [ rows, resolved_action, by_target ]
+        [ rows, resolved_action, by_target, labels_snapshot ]
       end
 
       def fetch_association_page(source_ids:, target_object:, preferred_action: nil)
@@ -167,6 +171,35 @@ module Hubspot
         end
       end
 
+      def update_labels_snapshot!(labels_snapshot, to_object, link)
+        labels_snapshot[to_object] ||= {
+          "rows" => 0,
+          "type_ids" => [],
+          "categories" => [],
+          "labels" => []
+        }
+
+        bucket = labels_snapshot[to_object]
+        bucket["rows"] += 1
+        bucket["type_ids"] << link["association_type_id"] if link["association_type_id"].present?
+        bucket["categories"] << link["association_category"] if link["association_category"].present?
+        bucket["labels"] << link["association_label"] if link["association_label"].present?
+        bucket["type_ids"].uniq!
+        bucket["categories"].uniq!
+        bucket["labels"].uniq!
+      end
+
+      def write_labels_metadata!(labels_snapshot, endpoint)
+        payload = {
+          source_object: source_object,
+          extracted_at: Time.current.iso8601,
+          endpoint: endpoint,
+          labels_by_target: labels_snapshot
+        }
+
+        store.write_json("metadata/associations/#{source_object}.json", payload)
+      end
+
       def normalize_link(link, to_object, endpoint)
         raw_hash = Digest::SHA256.hexdigest(JSON.generate(link["raw"]))
 
@@ -192,7 +225,7 @@ module Hubspot
         }
       end
 
-      def upsert_table!(count:, endpoint:, by_target:, warning: nil)
+      def upsert_table!(count:, endpoint:, by_target:, labels_snapshot:, warning: nil)
         run.export_tables.find_or_initialize_by(extractor_key: extractor_key).update!(
           object_type: "#{source_object}_associations",
           file_path: "raw_jsonl/object=#{source_object}_associations/part-00001.jsonl",
@@ -205,8 +238,9 @@ module Hubspot
             source_object: source_object,
             target_objects: target_objects,
             associated_rows_by_target: by_target,
-            warning: warning,
-            todo: "Add association labels/types metadata snapshot export"
+            labels_snapshot_file: "metadata/associations/#{source_object}.json",
+            labels_snapshot: labels_snapshot,
+            warning: warning
           }
         )
       end

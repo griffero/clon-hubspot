@@ -39,14 +39,14 @@ module Hubspot
         end
 
         dynamic = dynamic_objects.map do |schema|
-          name = schema["name"].presence || schema["objectTypeId"].presence || "custom_object"
+          name = schema["name"].presence || schema["fullyQualifiedName"].presence || schema["objectTypeId"].presence || "custom_object"
           object_type = "custom_#{name.parameterize(separator: "_")}"
           {
             extractor_key: "crm_#{object_type}",
             object_type: object_type,
             list_action_candidates: [ "HUBSPOT_HUBSPOT_LIST_OBJECTS", "HUBSPOT_LIST_OBJECTS" ],
             search_action_candidates: [ "HUBSPOT_HUBSPOT_SEARCH_OBJECTS", "HUBSPOT_SEARCH_OBJECTS" ],
-            properties: [ "hs_lastmodifieddate" ],
+            properties: custom_object_properties(schema),
             custom_object_schema: schema,
             custom_object_name: name,
             custom_object_id: schema["objectTypeId"]
@@ -54,6 +54,16 @@ module Hubspot
         end
 
         standard + dynamic
+      end
+
+      def custom_object_properties(schema)
+        schema_properties = Array(schema["properties"]).filter_map do |entry|
+          next unless entry.is_a?(Hash)
+
+          entry["name"] || entry["propertyName"]
+        end
+
+        (schema_properties + ["hs_lastmodifieddate"]).compact.uniq
       end
 
       def metadata_endpoints

@@ -1,4 +1,5 @@
 require "digest"
+require "set"
 
 module Hubspot
   module Export
@@ -25,6 +26,7 @@ module Hubspot
         file_path = "raw_jsonl/object=#{config.fetch(:object_type)}/part-00001.jsonl"
         highest_seen = checkpoint.high_watermark
         tombstone_count = checkpoint.metadata.fetch("tombstone_count", 0)
+        observed_properties = Set.new(checkpoint.metadata.fetch("observed_properties", []))
         resolved_action = checkpoint.metadata["resolved_action"]
 
         loop do
@@ -35,6 +37,8 @@ module Hubspot
 
           rows = results.map do |record|
             props = record["properties"] || {}
+            props.keys.each { |key| observed_properties << key }
+
             last_modified = parse_time(props["hs_lastmodifieddate"])
             highest_seen = [highest_seen, last_modified].compact.max
             deleted = record["archived"] == true || record["isDeleted"] == true
@@ -59,7 +63,8 @@ module Hubspot
             metadata: checkpoint.metadata.merge(
               "last_page_count" => results.length,
               "resolved_action" => resolved_action,
-              "tombstone_count" => tombstone_count
+              "tombstone_count" => tombstone_count,
+              "observed_properties" => observed_properties.to_a.sort
             )
           )
           run.heartbeat!
@@ -69,7 +74,14 @@ module Hubspot
         end
 
         checksum = store.checksum(file_path)
-        upsert_table_record!(file_path: file_path, extracted_count: extracted_count, checksum: checksum, endpoint: resolved_action, tombstone_count: tombstone_count)
+        upsert_table_record!(
+          file_path: file_path,
+          extracted_count: extracted_count,
+          checksum: checksum,
+          endpoint: resolved_action,
+          tombstone_count: tombstone_count,
+          observed_properties: observed_properties.to_a.sort
+        )
         checkpoint.mark_succeeded!(high_watermark: highest_seen)
         checkpoint
       rescue Hubspot::RetryExhaustedError => e
@@ -150,7 +162,11 @@ module Hubspot
         }
       end
 
-      def upsert_table_record!(file_path:, extracted_count:, checksum:, endpoint:, tombstone_count:)
+      def upsert_table_record!(file_path:, extracted_count:, checksum:, endpoint:, tombstone_count:, observed_properties:)
+        requested_properties = config.fetch(:properties).map(&:to_s)
+        unexpected_properties = observed_properties - requested_properties
+        missing_requested_properties = requested_properties - observed_properties
+
         table = run.export_tables.find_or_initialize_by(extractor_key: config.fetch(:extractor_key))
         table.update!(
           object_type: config.fetch(:object_type),
@@ -164,9 +180,25 @@ module Hubspot
             base_columns: Constants.base_columns,
             tombstone_count: tombstone_count,
             incremental_overlap_window_hours: Hubspot::Export::Runner::OVERLAP_WINDOW.in_hours,
-            deletion_signal: "record.archived || record.isDeleted",
-            deletion_api_supported: false,
-            todo: "Add HubSpot recycle-bin endpoint adapter when available in Composio"
+            requested_properties: requested_properties,
+            observed_properties: observed_properties,
+            schema_drift: {
+              unexpected_properties: unexpected_properties,
+              missing_requested_properties: missing_requested_properties,
+              unexpected_count: unexpected_properties.size,
+              missing_count: missing_requested_properties.size
+            },
+            deletion_strategy: {
+              flags: ["record.archived", "record.isDeleted"],
+              recycle_bin_adapter: {
+                status: "fallback_only",
+                checked_action_candidates: [
+                  "HUBSPOT_HUBSPOT_LIST_RECYCLED_RECORDS",
+                  "HUBSPOT_LIST_RECYCLED_RECORDS"
+                ],
+                reason: "Composio recycle-bin adapter not yet wired; relying on archived/isDeleted markers"
+              }
+            }
           }
         )
       end

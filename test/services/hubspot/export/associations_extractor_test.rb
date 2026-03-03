@@ -1,6 +1,7 @@
 require "test_helper"
 require "fileutils"
 require "securerandom"
+require "json"
 
 class Hubspot::Export::AssociationsExtractorTest < ActiveSupport::TestCase
   class FakeClient
@@ -52,5 +53,12 @@ class Hubspot::Export::AssociationsExtractorTest < ActiveSupport::TestCase
     assert_equal "contacts_associations", table.object_type
     assert_equal 1, table.extracted_count
     assert_equal 1, store.line_count("raw_jsonl/object=contacts_associations/part-00001.jsonl")
+
+    metadata_path = Rails.root.join("exports", "run_id=#{@run.run_id}", "metadata", "associations", "contacts.json")
+    assert File.exist?(metadata_path)
+
+    metadata = JSON.parse(File.read(metadata_path))
+    assert_equal "contacts", metadata["source_object"]
+    assert_equal ["primary"], metadata.dig("labels_by_target", "companies", "labels")
   end
 end

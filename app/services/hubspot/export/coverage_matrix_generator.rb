@@ -16,7 +16,8 @@ module Hubspot
             fields_included: config.fetch(:properties),
             history_available: false,
             associations_available: run.export_tables.any? { |t| t.object_type == "#{config.fetch(:object_type)}_associations" },
-            deletion_signal_available: true,
+            deletion_signal_available: deletion_signal_available?(table),
+            schema_drift_detected: schema_drift_detected?(table),
             status: coverage_status_for(table),
             blocker_reason: blocker_for(table),
             next_action: next_action_for(table)
@@ -39,10 +40,10 @@ module Hubspot
         lines << "- Run ID: #{json[:run_id]}"
         lines << "- Generated At: #{json[:generated_at]}"
         lines << ""
-        lines << "| Object | Status | Associations | Deletion | Endpoint | Blocker |"
-        lines << "|---|---|---|---|---|---|"
+        lines << "| Object | Status | Associations | Deletion | Schema Drift | Endpoint | Blocker |"
+        lines << "|---|---|---|---|---|---|---|"
         json[:rows].each do |row|
-          lines << "| #{row[:object_type]} | #{row[:status]} | #{yes_no(row[:associations_available])} | #{yes_no(row[:deletion_signal_available])} | #{row[:endpoint] || '-'} | #{row[:blocker_reason] || '-'} |"
+          lines << "| #{row[:object_type]} | #{row[:status]} | #{yes_no(row[:associations_available])} | #{yes_no(row[:deletion_signal_available])} | #{yes_no(row[:schema_drift_detected])} | #{row[:endpoint] || '-'} | #{row[:blocker_reason] || '-'} |"
         end
         lines << ""
         lines.join("\n")
@@ -70,7 +71,21 @@ module Hubspot
         return "Check extractor wiring and Composio action availability" if table.nil?
         return "Validate endpoint filters/permissions; inspect checkpoint errors" if table.extracted_count.to_i.zero?
 
+        drift = table.metadata.dig("schema_drift", "unexpected_count").to_i + table.metadata.dig("schema_drift", "missing_count").to_i
+        return "Review schema drift and update property metadata snapshots" if drift.positive?
+
         "None"
+      end
+
+      def deletion_signal_available?(table)
+        table&.metadata&.dig("deletion_strategy", "flags").present?
+      end
+
+      def schema_drift_detected?(table)
+        return false if table.nil?
+
+        table.metadata.dig("schema_drift", "unexpected_count").to_i.positive? ||
+          table.metadata.dig("schema_drift", "missing_count").to_i.positive?
       end
 
       def yes_no(value)

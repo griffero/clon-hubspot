@@ -44,14 +44,17 @@ module Hubspot
           ).call
         end
 
-        Constants::ASSOCIATION_SOURCE_OBJECTS.each do |source_object|
+        association_source_objects = (Constants::ASSOCIATION_SOURCE_OBJECTS + extractors.map { |cfg| cfg.fetch(:object_type) }).uniq
+        association_target_objects = (Constants::ASSOCIATION_TARGET_OBJECTS + extractors.map { |cfg| cfg.fetch(:object_type) }).uniq
+
+        association_source_objects.each do |source_object|
           AssociationsExtractor.new(
             run: run,
             portal_id: run.portal_id,
             store: store,
             client: client,
             source_object: source_object,
-            target_objects: Constants::ASSOCIATION_TARGET_OBJECTS
+            target_objects: association_target_objects
           ).call
         end
 
